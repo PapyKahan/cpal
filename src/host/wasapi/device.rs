@@ -6,6 +6,7 @@ use crate::{
     SupportedStreamConfigsError, COMMON_SAMPLE_RATES,
 };
 use once_cell::sync::Lazy;
+use core::f32;
 use std::ffi::OsString;
 use std::fmt;
 use std::mem;
@@ -200,8 +201,24 @@ pub unsafe fn is_format_supported(
 ) -> Result<bool, SupportedStreamConfigsError> {
     // Check if the given format is supported.
     let is_supported = |waveformatex_ptr, closest_waveformatex_ptr| {
+        //let w_format_tag = (*waveformatex_ptr).wFormatTag;
+        //let w_bits_per_sample = (*waveformatex_ptr).wBitsPerSample;
+        //let n_channels = (*waveformatex_ptr).nChannels;
+        //let n_samples_per_sec = (*waveformatex_ptr).nSamplesPerSec;
+        //let n_block_align = (*waveformatex_ptr).nBlockAlign;
+        //let n_avg_bytes_per_sec = (*waveformatex_ptr).nAvgBytesPerSec;
+        //let cb_size = (*waveformatex_ptr).cbSize;
+
+        //println!("waveformatex_ptr.wFormatTag: {}", w_format_tag);
+        //println!("waveformatex_ptr.wBitsPerSample: {}", w_bits_per_sample);
+        //println!("waveformatex_ptr.nChannels: {}", n_channels);
+        //println!("waveformatex_ptr.nSamplesPerSec: {}", n_samples_per_sec);
+        //println!("waveformatex_ptr.nBlockAlign: {}", n_block_align);
+        //println!("waveformatex_ptr.nAvgBytesPerSec: {}", n_avg_bytes_per_sec);
+        //println!("waveformatex_ptr.cbSize: {}", cb_size);
+
         let result = client.IsFormatSupported(
-            Audio::AUDCLNT_SHAREMODE_SHARED,
+            Audio::AUDCLNT_SHAREMODE_EXCLUSIVE,
             waveformatex_ptr,
             Some(closest_waveformatex_ptr),
         );
@@ -212,7 +229,7 @@ pub unsafe fn is_format_supported(
                 Err(SupportedStreamConfigsError::DeviceNotAvailable)
             }
             r if r.is_err() => Ok(false),
-            Foundation::S_FALSE => Ok(false),
+            //Foundation::S_FALSE => Ok(false),
             _ => Ok(true),
         }
     };
@@ -607,7 +624,8 @@ impl Device {
             let buffer_duration =
                 buffer_size_to_duration(&config.buffer_size, config.sample_rate.0);
 
-            let mut stream_flags = Audio::AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
+            let mut stream_flags = Audio::AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM;
+            //let mut stream_flags = Audio::AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
 
             if self.data_flow() == Audio::eRender {
                 stream_flags |= Audio::AUDCLNT_STREAMFLAGS_LOOPBACK;
@@ -617,7 +635,7 @@ impl Device {
             let waveformatex = {
                 let format_attempt = config_to_waveformatextensible(config, sample_format)
                     .ok_or(BuildStreamError::StreamConfigNotSupported)?;
-                let share_mode = Audio::AUDCLNT_SHAREMODE_SHARED;
+                let share_mode = Audio::AUDCLNT_SHAREMODE_EXCLUSIVE;
 
                 // Ensure the format is supported.
                 match super::device::is_format_supported(&audio_client, &format_attempt.Format) {
@@ -722,55 +740,109 @@ impl Device {
             let buffer_duration =
                 buffer_size_to_duration(&config.buffer_size, config.sample_rate.0);
 
+            let share_mode = Audio::AUDCLNT_SHAREMODE_EXCLUSIVE;
+            let mut stream_flags = Audio::AUDCLNT_STREAMFLAGS_NOPERSIST;
+            if share_mode != Audio::AUDCLNT_SHAREMODE_EXCLUSIVE {
+                stream_flags |= Audio::AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
+            }
+
             // Computing the format and initializing the device.
             let waveformatex = {
                 let format_attempt = config_to_waveformatextensible(config, sample_format)
                     .ok_or(BuildStreamError::StreamConfigNotSupported)?;
-                let share_mode = Audio::AUDCLNT_SHAREMODE_SHARED;
+                //let share_mode = Audio::AUDCLNT_SHAREMODE_SHARED;
 
                 // Ensure the format is supported.
-                match super::device::is_format_supported(&audio_client, &format_attempt.Format) {
-                    Ok(false) => return Err(BuildStreamError::StreamConfigNotSupported),
-                    Err(_) => return Err(BuildStreamError::DeviceNotAvailable),
-                    _ => (),
-                }
+                //match super::device::is_format_supported(&audio_client, &format_attempt.Format) {
+                //    Ok(false) => return Err(BuildStreamError::StreamConfigNotSupported),
+                //    Err(_) => return Err(BuildStreamError::DeviceNotAvailable),
+                //    _ => (),
+                //}
+
+                //// ------------------------------------------------------------------------------------------
+                //// Aligns WASAPI buffer to 128 byte packet boundary. HD Audio will fail to play if buffer
+                //// is misaligned. This problem was solved in Windows 7 were AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED
+                //// is thrown although we must align for Vista anyway.
+                //static UINT32 AlignFramesPerBuffer(UINT32 nFrames, UINT32 nBlockAlign, ALIGN_FUNC pAlignFunc)
+                //{
+                //#define HDA_PACKET_SIZE (128)
+                //
+                //    UINT32 bytes = nFrames * nBlockAlign;
+                //    UINT32 packets;
+                //
+                //    // align to a HD Audio packet size
+                //    bytes = pAlignFunc(bytes, HDA_PACKET_SIZE);
+                //
+                //    // atlest 1 frame must be available
+                //    if (bytes < HDA_PACKET_SIZE)
+                //        bytes = HDA_PACKET_SIZE;
+                //
+                //    packets = bytes / HDA_PACKET_SIZE;
+                //    bytes   = packets * HDA_PACKET_SIZE;
+                //    nFrames = bytes / nBlockAlign;
+                //
+                //    // WASAPI frames are always aligned to at least 8
+                //    nFrames = ALIGN_FWD(nFrames, 8);
+                //
+                //    return nFrames;
+                //
+                //#undef HDA_PACKET_SIZE
+                //}
+
+
+                //static REFERENCE_TIME MakeHnsPeriod(UINT32 nFrames, DWORD nSamplesPerSec)
+                //{
+                //    return (REFERENCE_TIME)((10000.0 * 1000 / nSamplesPerSec * nFrames) + 0.5);
+                //}
 
                 // Finally, initializing the audio client
+                println!("Initializing audio client");
                 audio_client
                     .Initialize(
                         share_mode,
-                        Audio::AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+                        stream_flags,
                         buffer_duration,
-                        0,
+                        if share_mode == Audio::AUDCLNT_SHAREMODE_EXCLUSIVE {
+                            //((10000.0 * 1000.0 / f64::from(config.sample_rate.0) * f64::from(config.buffer_size)) + 0.5) as i64
+                            buffer_duration
+                        } else {
+                            0
+                        },
                         &format_attempt.Format,
                         None,
                     )
                     .map_err(windows_err_to_cpal_err::<BuildStreamError>)?;
+                println!("Audio client initialized");
 
                 format_attempt.Format
             };
 
             // Creating the event that will be signalled whenever we need to submit some samples.
             let event = {
-                let event =
-                    Threading::CreateEventA(None, false, false, windows::core::PCSTR(ptr::null()))
-                        .map_err(|e| {
-                            let description = format!("failed to create event: {}", e);
-                            let err = BackendSpecificError { description };
-                            BuildStreamError::from(err)
-                        })?;
+                if share_mode == Audio::AUDCLNT_SHAREMODE_SHARED {
+                    let event =
+                        Threading::CreateEventA(None, false, false, windows::core::PCSTR(ptr::null()))
+                            .map_err(|e| {
+                                let description = format!("failed to create event: {}", e);
+                                let err = BackendSpecificError { description };
+                                BuildStreamError::from(err)
+                            })?;
 
-                if let Err(e) = audio_client.SetEventHandle(event) {
-                    let description = format!("failed to call SetEventHandle: {}", e);
-                    let err = BackendSpecificError { description };
-                    return Err(err.into());
+                    if let Err(e) = audio_client.SetEventHandle(event) {
+                        let description = format!("failed to call SetEventHandle: {}", e);
+                        let err = BackendSpecificError { description };
+                        return Err(err.into());
+                    }
+
+                    event
+                } else {
+                    Foundation::HANDLE::default()
                 }
-
-                event
             };
 
             // obtaining the size of the samples buffer in number of frames
             let max_frames_in_buffer = audio_client.GetBufferSize().map_err(|e| {
+                println!("GetBufferSize failed: {}", e);
                 windows_err_to_cpal_err_message::<BuildStreamError>(
                     e,
                     "failed to obtain buffer size: ",
@@ -781,6 +853,7 @@ impl Device {
             let render_client = audio_client
                 .GetService::<IAudioRenderClient>()
                 .map_err(|e| {
+                    println!("GetService failed: {}", e);
                     windows_err_to_cpal_err_message::<BuildStreamError>(
                         e,
                         "failed to build render client: ",
@@ -989,26 +1062,48 @@ fn config_to_waveformatextensible(
     config: &StreamConfig,
     sample_format: SampleFormat,
 ) -> Option<Audio::WAVEFORMATEXTENSIBLE> {
-    let format_tag = match sample_format {
-        SampleFormat::I16 => Audio::WAVE_FORMAT_PCM,
-        SampleFormat::F32 => KernelStreaming::WAVE_FORMAT_EXTENSIBLE,
-        _ => return None,
-    } as u16;
+
+    let mut use_extensible = config.channels > 2;
+
     let channels = config.channels;
     let sample_rate = config.sample_rate.0;
     let sample_bytes = sample_format.sample_size() as u16;
     let avg_bytes_per_sec = u32::from(channels) * sample_rate * u32::from(sample_bytes);
     let block_align = channels * sample_bytes;
     let bits_per_sample = 8 * sample_bytes;
+    if sample_bytes != 1 && sample_bytes != 2 {
+        use_extensible = true;
+    }
     let cb_size = match sample_format {
         SampleFormat::I16 => 0,
         SampleFormat::F32 => {
-            let extensible_size = mem::size_of::<Audio::WAVEFORMATEXTENSIBLE>();
-            let ex_size = mem::size_of::<Audio::WAVEFORMATEX>();
-            (extensible_size - ex_size) as u16
+            if !use_extensible {
+                0
+            }
+            else {
+                let extensible_size = mem::size_of::<Audio::WAVEFORMATEXTENSIBLE>();
+                let ex_size = mem::size_of::<Audio::WAVEFORMATEX>();
+                (extensible_size - ex_size) as u16
+            }
         }
         _ => return None,
     };
+
+    let mut format_tag = Audio::WAVE_FORMAT_PCM as u16;
+    if use_extensible {
+        format_tag = KernelStreaming::WAVE_FORMAT_EXTENSIBLE as u16;
+    }
+
+    //let format_tag = match sample_format {
+    //    SampleFormat::I16 => Audio::WAVE_FORMAT_PCM,
+    //    SampleFormat::I32 => Audio::WAVE_FORMAT_PCM,
+    //    SampleFormat::U32 => Audio::WAVE_FORMAT_PCM,
+    //    //SampleFormat::F32 => Multimedia::WAVE_FORMAT_IEEE_FLOAT,
+    //    //SampleFormat::F32 => Audio::WAVE_FORMAT_EXTENSIBLE,
+    //    SampleFormat::F32 => KernelStreaming::WAVE_FORMAT_EXTENSIBLE,
+    //    _ => return None,
+    //} as u16;
+
     let waveformatex = Audio::WAVEFORMATEX {
         wFormatTag: format_tag,
         nChannels: channels,
@@ -1022,21 +1117,28 @@ fn config_to_waveformatextensible(
     // CPAL does not care about speaker positions, so pass audio ight through.
     let channel_mask = KernelStreaming::KSAUDIO_SPEAKER_DIRECTOUT;
 
-    let sub_format = match sample_format {
-        SampleFormat::I16 => KernelStreaming::KSDATAFORMAT_SUBTYPE_PCM,
-        SampleFormat::F32 => Multimedia::KSDATAFORMAT_SUBTYPE_IEEE_FLOAT,
-        _ => return None,
-    };
-    let waveformatextensible = Audio::WAVEFORMATEXTENSIBLE {
-        Format: waveformatex,
-        Samples: Audio::WAVEFORMATEXTENSIBLE_0 {
-            wSamplesPerBlock: bits_per_sample,
-        },
-        dwChannelMask: channel_mask,
-        SubFormat: sub_format,
-    };
-
-    Some(waveformatextensible)
+    if use_extensible {
+        let sub_format = match sample_format {
+            SampleFormat::F32 => Multimedia::KSDATAFORMAT_SUBTYPE_IEEE_FLOAT,
+            _ => KernelStreaming::KSDATAFORMAT_SUBTYPE_PCM,
+        };
+        Some(Audio::WAVEFORMATEXTENSIBLE {
+            Format: waveformatex,
+            Samples: Audio::WAVEFORMATEXTENSIBLE_0 {
+                wSamplesPerBlock: bits_per_sample,
+            },
+            dwChannelMask: channel_mask,
+            SubFormat: sub_format,
+        })
+    }
+    else {
+        Some(Audio::WAVEFORMATEXTENSIBLE {
+            Format: waveformatex,
+            Samples: Audio::WAVEFORMATEXTENSIBLE_0::default(),
+            dwChannelMask: 0,
+            SubFormat: ::windows::core::GUID::default(),
+        })
+    }
 }
 
 fn buffer_size_to_duration(buffer_size: &BufferSize, sample_rate: u32) -> i64 {

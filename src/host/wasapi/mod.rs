@@ -86,6 +86,7 @@ impl ErrDeviceNotAvailable for crate::StreamError {
 }
 
 fn windows_err_to_cpal_err<E: ErrDeviceNotAvailable>(e: windows::core::Error) -> E {
+    println!("windows_err_to_cpal_err: {}", e);
     windows_err_to_cpal_err_message::<E>(e, "")
 }
 

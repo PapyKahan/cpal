@@ -162,6 +162,7 @@ pub trait DeviceTrait {
         D: FnMut(&mut [T], &OutputCallbackInfo) + Send + 'static,
         E: FnMut(StreamError) + Send + 'static,
     {
+        println!("build_output_stream : config {:?}, format : {:?}", config, T::FORMAT);
         self.build_output_stream_raw(
             config,
             T::FORMAT,
